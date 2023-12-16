@@ -10,6 +10,7 @@ import decimal
 import time
 
 prev_gas = None
+prev_gas_time = None
 while True:
     try:
         print("Connecting db")
@@ -57,12 +58,15 @@ while True:
                     # filter duplicates gas , since its hourly. (we want to be able to differentiate it, duplicate values confuse that)
                     if name == 'HOURLY_GAS_METER_READING':
                         gas_time = value.datetime
-                        if prev_gas != None and gas_time != prev_gas:
+                        if prev_gas_time != None and gas_time != prev_gas_time:
                             pg = Point("P1 values").tag("location", "Prins Bernardstraat")
-                            pg.field(name, float(value.value))
+                            pg.field("GAS_METER_READING", float(value.value))
+                            if prev_gas:
+                                pg.field("GAS_USAGE", float(value.value) - prev_gas)
                             pg.time(gas_time)
                             write_api.write(bucket="energie", record=pg)
-                        prev_gas = gas_time
+                            prev_gas_time = gas_time
+                            prev_gas = float(value.value)
                         continue
                     p.field(name, float(value.value))
                     report = True
