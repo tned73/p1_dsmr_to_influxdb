@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-
+import logging
 from dsmr_parser import telegram_specifications, obis_references
 from dsmr_parser.clients import SerialReader, SERIAL_SETTINGS_V4
 from influxdb_client import InfluxDBClient, Point
@@ -8,6 +8,9 @@ import pprint
 import config
 import decimal
 import time
+
+logging.basicConfig(filename='/var/log/p1.service.log', filemode='w', level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 prev_gas = None
 prev_gas_time = None
@@ -35,7 +38,7 @@ while True:
             p = Point("P1 values").tag("location", "Prins Bernardstraat")
             p.time(telegram.P1_MESSAGE_TIMESTAMP.value)
             report = False
-
+            logger.info(telegram.to_json())
             # create influx measurement record
             for key, value in telegram.items():
                 name = key
@@ -58,7 +61,7 @@ while True:
                     # filter duplicates gas , since its hourly. (we want to be able to differentiate it, duplicate values confuse that)
                     if name == 'HOURLY_GAS_METER_READING':
                         gas_time = value.datetime
-                        if prev_gas_time != None and gas_time != prev_gas_time:
+                        if prev_gas_time == None or gas_time != prev_gas_time:
                             pg = Point("P1 values").tag("location", "Prins Bernardstraat")
                             pg.field("GAS_METER_READING", float(value.value))
                             if prev_gas:
@@ -71,7 +74,6 @@ while True:
                     p.field(name, float(value.value))
                     report = True
 
-            pprint.pprint(p)
             if report:
                 write_api.write(bucket="energie", record=p)
                 report = False
