@@ -8,9 +8,32 @@ import pprint
 import config
 import decimal
 import time
+from logging.handlers import TimedRotatingFileHandler
+import gzip
+import logging
+import logging.handlers
+import os
+import shutil
 
-logging.basicConfig(filename='/var/log/p1.service.log', filemode='w', level=logging.DEBUG)
+def namer(name):
+    return name + ".gz"
+
+def rotator(source, dest):
+    with open(source, 'rb') as f_in:
+        with gzip.open(dest, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+    os.remove(source)
+
+# logging.basicConfig('/var/logp1.service.log', filemode='w', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+rh = TimedRotatingFileHandler('/var/log/p1.service.log',
+                                       when="d",
+                                       interval=1,
+                                       backupCount=31)
+rh.rotator = rotator
+rh.namer = namer
+logger.addHandler(rh)
 
 prev_gas = None
 prev_gas_time = None
@@ -61,7 +84,7 @@ while True:
                     # filter duplicates gas , since its hourly. (we want to be able to differentiate it, duplicate values confuse that)
                     if name == 'HOURLY_GAS_METER_READING':
                         gas_time = value.datetime
-                        if prev_gas_time == None or gas_time != prev_gas_time:
+                        if gas_time and (prev_gas_time == None or gas_time != prev_gas_time):
                             pg = Point("P1 values").tag("location", "Prins Bernardstraat")
                             pg.field("GAS_METER_READING", float(value.value))
                             if prev_gas:
