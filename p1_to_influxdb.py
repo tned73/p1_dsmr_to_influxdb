@@ -35,6 +35,27 @@ rh.rotator = rotator
 rh.namer = namer
 logger.addHandler(rh)
 
+
+INFLUXDB_FIELDS = {
+    "ELECTRICITY_USED_TARIFF_1",
+    "ELECTRICITY_USED_TARIFF_2",
+    "ELECTRICITY_DELIVERED_TARIFF_1",
+    "ELECTRICITY_DELIVERED_TARIFF_2",
+    "INSTANTANEOUS_CURRENT_L1",
+    "INSTANTANEOUS_CURRENT_L2",
+    "INSTANTANEOUS_CURRENT_L3",
+    "INSTANTANEOUS_ACTIVE_POWER_L1_POSITIVE",
+    "INSTANTANEOUS_ACTIVE_POWER_L2_POSITIVE",
+    "INSTANTANEOUS_ACTIVE_POWER_L3_POSITIVE",
+    "INSTANTANEOUS_ACTIVE_POWER_L1_NEGATIVE",
+    "INSTANTANEOUS_ACTIVE_POWER_L2_NEGATIVE",
+    "INSTANTANEOUS_ACTIVE_POWER_L3_NEGATIVE",
+    "HOURLY_GAS_METER_READING",
+    "ELECTRICITY_ACTIVE_TARIFF",
+    "CURRENT_ELECTRICITY_USAGE",
+    "CURRENT_ELECTRICITY_DELIVERY",
+}
+
 prev_gas = None
 prev_gas_time = None
 while True:
@@ -63,45 +84,35 @@ while True:
             report = False
             logger.info(telegram.to_json())
             # create influx measurement record
-            for key, value in telegram.items():
+            for key, value in telegram:
                 name = key
-
-                if hasattr(value, "value"):
-                    # determine obis name
-                    for obis_name in dir(obis_references):
-                        if getattr(obis_references, obis_name) == key:
-                            name = obis_name
-                            break
-
-                    # Filter out failure log entries
-                    if name == "POWER_EVENT_FAILURE_LOG":
-                        continue
+                if hasattr(value, "value") and name in INFLUXDB_FIELDS:
                     # is it a number?
-                    if not(isinstance(value.value, int) or isinstance(value.value, decimal.Decimal)):
-                        continue
-
-                    nr = float(value.value)
+                    if isinstance(value.value, decimal.Decimal):
+                        nr = float(value.value)
+                    else:
+                        nr = int(value.value)
                     # filter duplicates gas , since its hourly. (we want to be able to differentiate it, duplicate values confuse that)
                     if name == 'HOURLY_GAS_METER_READING':
                         gas_time = value.datetime
                         if gas_time and (prev_gas_time == None or gas_time != prev_gas_time):
                             pg = Point("P1 values").tag("location", "Prins Bernardstraat")
-                            pg.field("GAS_METER_READING", float(value.value))
+                            pg.field("GAS_METER_READING", nr)
                             if prev_gas:
-                                pg.field("GAS_USAGE", float(value.value) - prev_gas)
+                                pg.field("GAS_USAGE", nr - prev_gas)
                             pg.time(gas_time)
                             write_api.write(bucket="energie", record=pg)
                             prev_gas_time = gas_time
-                            prev_gas = float(value.value)
+                            prev_gas = nr
                         continue
-                    p.field(name, float(value.value))
+                    p.field(name, nr)
                     report = True
 
             if report:
                 write_api.write(bucket="energie", record=p)
                 report = False
     except Exception as e:
+        logger.error("an exception happend", exc_info=e)
         print(str(e))
-        print("Pausing and restarting...")
-        time.sleep(10)
+        time.sleep(1)
 
